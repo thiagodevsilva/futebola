@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+@plugin "daisyui";
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../**/*.vue';
+
+/* Futebola design tokens */
+@theme {
+  /* Paleta: amarelo-esverdeado #BAFF39, cinza #6E6E6E, branco #FFFFFF */
+  --color-futebola-primary: #BAFF39;
+  --color-futebola-muted: #6E6E6E;
+  --color-futebola-base: #FFFFFF;
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --radius-box: 0.75rem;
+  --radius-btn: 0.5rem;
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
