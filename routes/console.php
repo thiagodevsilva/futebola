@@ -14,3 +14,7 @@ Artisan::command('inspire', function () {
 Schedule::job(new FetchRssFeedsJob)->everyFifteenMinutes()->name('rss-feeds')->withoutOverlapping(10);
 Schedule::job(new UpdateStandingsJob)->hourly()->name('standings')->withoutOverlapping(15);
 Schedule::job(new UpdateFixturesJob)->everyThirtyMinutes()->name('fixtures')->withoutOverlapping(15);
+
+if (config('portal-football.enabled')) {
+    Schedule::command('futebola:sync-portal-football')->everyThirtyMinutes()->name('portal-football')->withoutOverlapping(15);
+}
