@@ -12,6 +12,7 @@
  * Respeite os termos de uso dos sites. Preferir endpoints públicos que o próprio site já consome.
  *
  * driver `next_data_page`: URL da página HTML (Next.js) — lê #__NEXT_DATA__ e extrai tabela/jogos (ex.: OneFootball).
+ * fixtures_page_url: pode listar várias URLs separadas por vírgula (ex.: /jogos e /resultados).
  */
 
 return [
@@ -22,9 +23,9 @@ return [
 
     'timeout' => (int) env('PORTAL_FOOTBALL_TIMEOUT', 15),
 
-    'fixtures_days_back' => (int) env('PORTAL_FIXTURES_DAYS_BACK', 14),
+    'fixtures_days_back' => (int) env('PORTAL_FIXTURES_DAYS_BACK', 180),
 
-    'fixtures_days_ahead' => (int) env('PORTAL_FIXTURES_DAYS_AHEAD', 14),
+    'fixtures_days_ahead' => (int) env('PORTAL_FIXTURES_DAYS_AHEAD', 180),
 
     /*
      * Cada fonte aponta para uma liga existente (football_data_org_code no banco).

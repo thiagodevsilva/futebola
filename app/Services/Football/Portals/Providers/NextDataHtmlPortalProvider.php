@@ -11,18 +11,23 @@ use Illuminate\Support\Facades\Log;
 /**
  * Página HTML de sites Next.js: extrai JSON do script #__NEXT_DATA__ (e outros scripts JSON)
  * e reutiliza as mesmas heurísticas de PortalFootballJsonInspector.
+ *
+ * Para jogos estilo OneFootball (matchCards com kickoff/homeTeam/awayTeam), usa coleta recursiva.
+ * Em fixtures_page_url pode haver várias URLs separadas por vírgula (ex.: /jogos e /resultados).
  */
 class NextDataHtmlPortalProvider implements PortalFootballProviderContract
 {
-    private ?string $htmlCache = null;
+    /** @var array<string, string> url => html */
+    private array $htmlByUrl = [];
 
-    private ?string $htmlCacheUrl = null;
-
+    /**
+     * @param  list<string>  $fixturesPageUrls
+     */
     public function __construct(
         protected string $competitionCode,
         protected string $providerKey,
         protected ?string $standingsPageUrl,
-        protected ?string $fixturesPageUrl,
+        protected array $fixturesPageUrls,
         protected string $userAgent,
         protected int $timeoutSeconds,
     ) {}
@@ -33,13 +38,22 @@ class NextDataHtmlPortalProvider implements PortalFootballProviderContract
     public static function fromConfigArray(array $config): self
     {
         $standings = $config['standings_page_url'] ?? $config['standings_url'] ?? null;
-        $fixtures = $config['fixtures_page_url'] ?? $config['fixtures_url'] ?? null;
+        $fixturesRaw = $config['fixtures_page_url'] ?? $config['fixtures_url'] ?? '';
+        $urls = [];
+        if (is_string($fixturesRaw) && $fixturesRaw !== '') {
+            foreach (preg_split('/\s*,\s*/', $fixturesRaw) as $u) {
+                $u = trim($u);
+                if ($u !== '') {
+                    $urls[] = $u;
+                }
+            }
+        }
 
         return new self(
             (string) ($config['competition_code'] ?? ''),
             (string) ($config['provider_key'] ?? 'next-data-html'),
             is_string($standings) && $standings !== '' ? $standings : null,
-            is_string($fixtures) && $fixtures !== '' ? $fixtures : null,
+            $urls,
             (string) ($config['user_agent'] ?? 'FutebolaPortal/1.0'),
             (int) ($config['timeout'] ?? 25),
         );
@@ -68,16 +82,26 @@ class NextDataHtmlPortalProvider implements PortalFootballProviderContract
 
     public function fetchFixtures(Carbon $from, Carbon $to): array
     {
-        $pageUrl = $this->fixturesPageUrl ?? $this->standingsPageUrl;
-        if ($pageUrl === null) {
+        $urls = $this->fixturesPageUrls;
+        if ($urls === [] && $this->standingsPageUrl !== null) {
+            $urls = [$this->standingsPageUrl];
+        }
+        if ($urls === []) {
             return [];
         }
 
-        $html = $this->htmlFor($pageUrl);
-        $fixtures = $this->extractFixturesFromHtml($html);
+        $merged = [];
+        foreach ($urls as $url) {
+            $html = $this->htmlFor($url);
+            foreach ($this->extractFixturesFromHtml($html) as $row) {
+                $merged[] = $row;
+            }
+        }
 
-        return array_values(array_filter($fixtures, function (array $row) use ($from, $to) {
-            $normDate = $row['date'] ?? $row['data'] ?? $row['utcDate'] ?? null;
+        $merged = PortalFootballHtmlJsonDiscovery::dedupeFixtureRows($merged);
+
+        return array_values(array_filter($merged, function (array $row) use ($from, $to) {
+            $normDate = $row['date'] ?? $row['data'] ?? $row['utcDate'] ?? $row['kickoff'] ?? null;
             if (! is_string($normDate) || $normDate === '') {
                 return false;
             }
@@ -93,14 +117,11 @@ class NextDataHtmlPortalProvider implements PortalFootballProviderContract
 
     private function htmlFor(string $url): string
     {
-        if ($this->htmlCache !== null && $this->htmlCacheUrl === $url) {
-            return $this->htmlCache;
+        if (! isset($this->htmlByUrl[$url])) {
+            $this->htmlByUrl[$url] = $this->fetchHtml($url);
         }
 
-        $this->htmlCache = $this->fetchHtml($url);
-        $this->htmlCacheUrl = $url;
-
-        return $this->htmlCache;
+        return $this->htmlByUrl[$url];
     }
 
     private function fetchHtml(string $url): string
@@ -154,13 +175,6 @@ class NextDataHtmlPortalProvider implements PortalFootballProviderContract
      */
     private function extractFixturesFromHtml(string $html): array
     {
-        foreach (PortalFootballHtmlJsonDiscovery::scriptBlobsFromHtml($html) as $blob) {
-            $payload = PortalFootballHtmlJsonDiscovery::findFirstRecognizedPayload($blob['data']);
-            if ($payload['fixtures'] !== []) {
-                return $payload['fixtures'];
-            }
-        }
-
-        return [];
+        return PortalFootballHtmlJsonDiscovery::extractFixturesFromHtml($html);
     }
 }

@@ -108,7 +108,9 @@ final class PortalFootballHtmlJsonDiscovery
             || str_contains($lower, 'standings')
             || str_contains($lower, 'classificacao')
             || str_contains($lower, 'fixtures')
-            || (str_contains($lower, 'brasileirao') && str_contains($lower, 'json'));
+            || (str_contains($lower, 'brasileirao') && str_contains($lower, 'json'))
+            || str_contains($lower, 'web-experience')
+            || str_contains($lower, 'onefootball.com/api');
     }
 
     public static function absoluteUrl(string $baseUrl, string $pathOrUrl): ?string
@@ -159,5 +161,114 @@ final class PortalFootballHtmlJsonDiscovery
         }
 
         return ['standings' => [], 'fixtures' => []];
+    }
+
+    /**
+     * Agrega jogos de todos os scripts JSON da página (matchCards OneFootball + formato genérico).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function extractFixturesFromHtml(string $html): array
+    {
+        $merged = [];
+        foreach (self::scriptBlobsFromHtml($html) as $blob) {
+            foreach (self::collectNestedMatchCards($blob['data']) as $row) {
+                $merged[] = $row;
+            }
+            $payload = self::findFirstRecognizedPayload($blob['data']);
+            foreach ($payload['fixtures'] as $row) {
+                $merged[] = $row;
+            }
+        }
+
+        return self::dedupeFixtureRows($merged);
+    }
+
+    /**
+     * OneFootball / Next.js: cartões com kickoff, homeTeam, awayTeam (tip. matchCardsListsAppender).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function collectNestedMatchCards(array $node, int $maxDepth = 22): array
+    {
+        $out = [];
+        $budget = 120000;
+        self::walkMatchCards($node, $out, 0, $maxDepth, $budget);
+
+        return $out;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function dedupeFixtureRows(array $rows): array
+    {
+        $byKey = [];
+        foreach ($rows as $r) {
+            if (isset($r['matchId']) && (is_string($r['matchId']) || is_int($r['matchId']))) {
+                $k = 'id:'.(string) $r['matchId'];
+            } else {
+                $kick = (string) ($r['kickoff'] ?? $r['date'] ?? $r['utcDate'] ?? '');
+                $k = $kick.'|'.($r['home_team_name'] ?? data_get($r, 'homeTeam.name') ?? '')
+                    .'|'.($r['away_team_name'] ?? data_get($r, 'awayTeam.name') ?? '');
+            }
+            $byKey[$k] = $r;
+        }
+
+        return array_values($byKey);
+    }
+
+    /**
+     * @param  array<string, mixed>|list<mixed>  $node
+     * @param  list<array<string, mixed>>  $out
+     */
+    private static function walkMatchCards($node, array &$out, int $depth, int $maxDepth, int &$budget): void
+    {
+        if ($budget-- <= 0 || $depth > $maxDepth) {
+            return;
+        }
+        if (! is_array($node)) {
+            return;
+        }
+
+        if (isset($node['kickoff'], $node['homeTeam'], $node['awayTeam'])
+            && is_array($node['homeTeam']) && is_array($node['awayTeam'])
+            && isset($node['homeTeam']['name'], $node['awayTeam']['name'])
+            && is_string($node['homeTeam']['name']) && is_string($node['awayTeam']['name'])) {
+            $out[] = self::flattenMatchCardLikeOneFootball($node);
+
+            return;
+        }
+
+        foreach ($node as $child) {
+            if (is_array($child)) {
+                self::walkMatchCards($child, $out, $depth + 1, $maxDepth, $budget);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $c
+     * @return array<string, mixed>
+     */
+    private static function flattenMatchCardLikeOneFootball(array $c): array
+    {
+        $scoreH = $c['homeTeam']['score'] ?? '';
+        $scoreA = $c['awayTeam']['score'] ?? '';
+        $kickoff = is_string($c['kickoff'] ?? null) ? $c['kickoff'] : '';
+
+        return [
+            'matchId' => $c['matchId'] ?? null,
+            'kickoff' => $kickoff,
+            'date' => $kickoff,
+            'utcDate' => $kickoff,
+            'home_team_name' => $c['homeTeam']['name'] ?? '',
+            'away_team_name' => $c['awayTeam']['name'] ?? '',
+            'home_team_logo' => data_get($c, 'homeTeam.imageObject.path'),
+            'away_team_logo' => data_get($c, 'awayTeam.imageObject.path'),
+            'home_goals' => ($scoreH !== '' && is_numeric($scoreH)) ? (int) $scoreH : null,
+            'away_goals' => ($scoreA !== '' && is_numeric($scoreA)) ? (int) $scoreA : null,
+        ];
     }
 }

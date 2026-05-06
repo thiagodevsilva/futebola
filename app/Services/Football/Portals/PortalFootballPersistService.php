@@ -245,13 +245,22 @@ class PortalFootballPersistService
             ?? $row['mandante']
             ?? $row['time_casa']
             ?? $row['homeTeam']
+            ?? data_get($row, 'homeTeam.name')
             ?? null;
         $away = $row['away_team_name']
             ?? $row['away']
             ?? $row['visitante']
             ?? $row['time_visitante']
             ?? $row['awayTeam']
+            ?? data_get($row, 'awayTeam.name')
             ?? null;
+
+        if (is_array($home)) {
+            $home = $home['name'] ?? null;
+        }
+        if (is_array($away)) {
+            $away = $away['name'] ?? null;
+        }
 
         $home = is_string($home) ? trim($home) : null;
         $away = is_string($away) ? trim($away) : null;
@@ -259,7 +268,7 @@ class PortalFootballPersistService
             return null;
         }
 
-        $dateRaw = $row['date'] ?? $row['data'] ?? $row['utcDate'] ?? $row['start'] ?? null;
+        $dateRaw = $row['date'] ?? $row['data'] ?? $row['utcDate'] ?? $row['start'] ?? $row['kickoff'] ?? null;
         $date = null;
         if ($dateRaw instanceof Carbon) {
             $date = $dateRaw;
@@ -274,22 +283,48 @@ class PortalFootballPersistService
             return null;
         }
 
-        $homeGoals = $row['home_goals'] ?? $row['score_home'] ?? $row['placar_casa'] ?? null;
-        $awayGoals = $row['away_goals'] ?? $row['score_away'] ?? $row['placar_visitante'] ?? null;
+        $homeGoals = $row['home_goals'] ?? $row['score_home'] ?? $row['placar_casa']
+            ?? data_get($row, 'homeTeam.score') ?? null;
+        $awayGoals = $row['away_goals'] ?? $row['score_away'] ?? $row['placar_visitante']
+            ?? data_get($row, 'awayTeam.score') ?? null;
+        if (is_string($homeGoals) && is_numeric($homeGoals)) {
+            $homeGoals = (int) $homeGoals;
+        }
+        if (is_string($awayGoals) && is_numeric($awayGoals)) {
+            $awayGoals = (int) $awayGoals;
+        }
 
-        $uniqueToken = $date->format('YmdHi').'|'.Str::slug($home).'|'.Str::slug($away);
+        if (isset($row['matchId']) && (is_string($row['matchId']) || is_int($row['matchId'])) && (string) $row['matchId'] !== '') {
+            $uniqueToken = 'ofm:'.(string) $row['matchId'];
+        } else {
+            $uniqueToken = $date->format('YmdHi').'|'.Str::slug($home).'|'.Str::slug($away);
+        }
 
         return [
             'unique_token' => $uniqueToken,
             'date' => $date,
             'home_team_name' => $home,
             'away_team_name' => $away,
-            'home_team_logo' => isset($row['home_team_logo']) && is_string($row['home_team_logo']) ? $row['home_team_logo'] : null,
-            'away_team_logo' => isset($row['away_team_logo']) && is_string($row['away_team_logo']) ? $row['away_team_logo'] : null,
+            'home_team_logo' => $this->resolveFixtureTeamLogo($row, true),
+            'away_team_logo' => $this->resolveFixtureTeamLogo($row, false),
             'home_goals' => is_numeric($homeGoals) ? (int) $homeGoals : null,
             'away_goals' => is_numeric($awayGoals) ? (int) $awayGoals : null,
             'status' => isset($row['status']) && is_string($row['status']) ? $row['status'] : null,
             'venue' => isset($row['venue']) && is_string($row['venue']) ? $row['venue'] : null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function resolveFixtureTeamLogo(array $row, bool $home): ?string
+    {
+        if ($home) {
+            $direct = $row['home_team_logo'] ?? data_get($row, 'homeTeam.imageObject.path');
+        } else {
+            $direct = $row['away_team_logo'] ?? data_get($row, 'awayTeam.imageObject.path');
+        }
+
+        return is_string($direct) && $direct !== '' ? $direct : null;
     }
 }

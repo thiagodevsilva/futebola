@@ -101,6 +101,30 @@ class ProbePortalFootballUrlCommand extends Command
 
         $found = false;
 
+        $aggFixturesAll = PortalFootballHtmlJsonDiscovery::extractFixturesFromHtml($body);
+        $aggFixtures = array_values(array_filter($aggFixturesAll, function (array $row) {
+            $normDate = $row['date'] ?? $row['data'] ?? $row['utcDate'] ?? $row['kickoff'] ?? null;
+            if (! is_string($normDate) || $normDate === '') {
+                return false;
+            }
+            try {
+                $d = Carbon::parse($normDate);
+            } catch (\Throwable) {
+                return false;
+            }
+
+            return $d->between(
+                Carbon::now()->subDays(400)->startOfDay(),
+                Carbon::now()->addDays(400)->endOfDay()
+            );
+        }));
+        if ($aggFixtures !== []) {
+            $found = true;
+            $this->info('Jogos no HTML (matchCards OneFootball / outros formatos): '.count($aggFixtures).' na janela ±400 dias ('.count($aggFixturesAll).' brutos).');
+            $this->reportLists([], $aggFixtures, $persist);
+            $this->newLine();
+        }
+
         foreach (PortalFootballHtmlJsonDiscovery::scriptBlobsFromHtml($body) as $blob) {
             $label = $blob['label'];
             $payload = PortalFootballHtmlJsonDiscovery::findFirstRecognizedPayload($blob['data']);
@@ -242,7 +266,11 @@ class ProbePortalFootballUrlCommand extends Command
             $norm = $persist->normalizeFixtureRow($fixtures[0]);
             $this->newLine();
             $this->line('  Primeiro jogo (normalizado):');
-            $this->line(json_encode($norm, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            if ($norm === null) {
+                $this->warn('  null — chaves: '.implode(', ', array_keys($fixtures[0])));
+            } else {
+                $this->line(json_encode($norm, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            }
         }
     }
 }
