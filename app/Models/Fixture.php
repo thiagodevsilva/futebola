@@ -22,11 +22,13 @@ class Fixture extends Model
         'away_goals',
         'status',
         'venue',
+        'match_round',
     ];
 
     protected $casts = [
         'date' => 'datetime',
         'season' => 'integer',
+        'match_round' => 'integer',
         'home_goals' => 'integer',
         'away_goals' => 'integer',
     ];

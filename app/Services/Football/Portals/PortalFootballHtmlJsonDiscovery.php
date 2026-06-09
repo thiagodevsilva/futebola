@@ -172,6 +172,8 @@ final class PortalFootballHtmlJsonDiscovery
     {
         $merged = [];
         foreach (self::scriptBlobsFromHtml($html) as $blob) {
+            $budget = 120000;
+            self::walkListsForMatchCards($blob['data'], $merged, 0, 22, $budget);
             foreach (self::collectNestedMatchCards($blob['data']) as $row) {
                 $merged[] = $row;
             }
@@ -182,6 +184,71 @@ final class PortalFootballHtmlJsonDiscovery
         }
 
         return self::dedupeFixtureRows($merged);
+    }
+
+    /**
+     * OneFootball: em `lists[]`, `sectionHeader.subtitle` traz "Rodada N" e `matchCards[]` os jogos.
+     *
+     * @param  list<array<string, mixed>>  $out
+     */
+    private static function walkListsForMatchCards($node, array &$out, int $depth, int $maxDepth, int &$budget): void
+    {
+        if ($budget-- <= 0 || $depth > $maxDepth) {
+            return;
+        }
+        if (! is_array($node)) {
+            return;
+        }
+
+        if (isset($node['lists']) && is_array($node['lists'])) {
+            foreach ($node['lists'] as $listItem) {
+                if (! is_array($listItem)) {
+                    continue;
+                }
+                $subtitle = data_get($listItem, 'sectionHeader.subtitle');
+                if (! is_string($subtitle) || $subtitle === '') {
+                    $subtitle = data_get($listItem, 'sectionHeader.title');
+                }
+                $round = is_string($subtitle) ? self::parseRodadaNumber($subtitle) : null;
+                $cards = $listItem['matchCards'] ?? [];
+                if (! is_array($cards)) {
+                    continue;
+                }
+                foreach ($cards as $card) {
+                    if (! is_array($card)) {
+                        continue;
+                    }
+                    if (isset($card['kickoff'], $card['homeTeam'], $card['awayTeam'])
+                        && is_array($card['homeTeam']) && is_array($card['awayTeam'])
+                        && isset($card['homeTeam']['name'], $card['awayTeam']['name'])
+                        && is_string($card['homeTeam']['name']) && is_string($card['awayTeam']['name'])) {
+                        $row = self::flattenMatchCardLikeOneFootball($card);
+                        if ($round !== null) {
+                            $row['match_round'] = $round;
+                        }
+                        $out[] = $row;
+                    }
+                }
+            }
+        }
+
+        foreach ($node as $child) {
+            if (is_array($child)) {
+                self::walkListsForMatchCards($child, $out, $depth + 1, $maxDepth, $budget);
+            }
+        }
+    }
+
+    public static function parseRodadaNumber(string $text): ?int
+    {
+        if (preg_match('/Rodada\s*(\d+)/iu', $text, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/Round\s*(\d+)/iu', $text, $m)) {
+            return (int) $m[1];
+        }
+
+        return null;
     }
 
     /**
@@ -213,10 +280,56 @@ final class PortalFootballHtmlJsonDiscovery
                 $k = $kick.'|'.($r['home_team_name'] ?? data_get($r, 'homeTeam.name') ?? '')
                     .'|'.($r['away_team_name'] ?? data_get($r, 'awayTeam.name') ?? '');
             }
-            $byKey[$k] = $r;
+            if (! isset($byKey[$k])) {
+                $byKey[$k] = $r;
+
+                continue;
+            }
+            $byKey[$k] = self::mergeFixtureRowsForSameMatch($byKey[$k], $r);
         }
 
         return array_values($byKey);
+    }
+
+    /**
+     * Une linhas do mesmo jogo (ex.: listas com rodada + matchCards soltos só com placar).
+     *
+     * @param  array<string, mixed>  $a
+     * @param  array<string, mixed>  $b
+     * @return array<string, mixed>
+     */
+    private static function mergeFixtureRowsForSameMatch(array $a, array $b): array
+    {
+        $out = $a;
+        foreach ($b as $key => $val) {
+            if ($key === 'match_round' && $val !== null && (! isset($out['match_round']) || $out['match_round'] === null)) {
+                $out['match_round'] = $val;
+
+                continue;
+            }
+            if ($key === 'home_goals' || $key === 'away_goals') {
+                $hasOut = isset($out['home_goals'], $out['away_goals'])
+                    && $out['home_goals'] !== null && $out['away_goals'] !== null;
+                $hasValPair = isset($b['home_goals'], $b['away_goals'])
+                    && $b['home_goals'] !== null && $b['away_goals'] !== null;
+                if (! $hasOut && $hasValPair) {
+                    $out['home_goals'] = $b['home_goals'];
+                    $out['away_goals'] = $b['away_goals'];
+                } elseif (! isset($out[$key]) || $out[$key] === null) {
+                    if ($val !== null && (is_numeric($val) || $val === '')) {
+                        $out[$key] = is_numeric($val) ? (int) $val : null;
+                    }
+                }
+
+                continue;
+            }
+            $prev = $out[$key] ?? null;
+            if (($prev === null || $prev === '') && $val !== null && $val !== '') {
+                $out[$key] = $val;
+            }
+        }
+
+        return $out;
     }
 
     /**

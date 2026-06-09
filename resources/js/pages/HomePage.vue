@@ -55,11 +55,13 @@
         />
       </div>
       <div>
-        <h2 class="text-xl font-bold mb-4 text-neutral-900">Últimos resultados</h2>
+        <h2 class="text-xl font-bold mb-1 text-neutral-900">Últimos resultados</h2>
+        <p v-if="resultsRoundLabel" class="text-sm font-medium text-neutral-600 mb-3">{{ resultsRoundLabel }}</p>
         <ListaJogos :grouped="resultsGrouped" :unavailable="resultsUnavailable" />
       </div>
       <div>
-        <h2 class="text-xl font-bold mb-4 text-neutral-900">Próximos jogos</h2>
+        <h2 class="text-xl font-bold mb-1 text-neutral-900">Próximos jogos</h2>
+        <p v-if="fixturesRoundLabel" class="text-sm font-medium text-neutral-600 mb-3">{{ fixturesRoundLabel }}</p>
         <ListaJogos :grouped="fixturesGrouped" :unavailable="fixturesUnavailable" />
       </div>
     </section>
@@ -113,7 +115,7 @@ import { RouterLink } from 'vue-router';
 import CardNoticia from '@/components/CardNoticia.vue';
 import TabelaClassificacao from '@/components/TabelaClassificacao.vue';
 import ListaJogos from '@/components/ListaJogos.vue';
-import { getNews, getStandings, getFixtures, getSources, getSerieATeams } from '@/api';
+import { getNews, getStandings, getFixturesHomeRounds, getSources, getSerieATeams } from '@/api';
 
 const homeNews = ref([]);
 const loadingNews = ref(true);
@@ -126,28 +128,17 @@ const fixturesGrouped = ref([]);
 const fixturesUnavailable = ref('');
 const resultsGrouped = ref([]);
 const resultsUnavailable = ref('');
+const resultsRoundLabel = ref('');
+const fixturesRoundLabel = ref('');
 const sources = ref([]);
-
-function pastWeekParams() {
-  const end = new Date();
-  end.setDate(end.getDate() - 1);
-  const start = new Date();
-  start.setDate(start.getDate() - 7);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
-}
 
 onMounted(async () => {
   try {
-    const params = pastWeekParams();
-    const [saoPauloRes, latestRes, standingsRes, fixturesRes, resultsRes, sourcesRes, teamsRes] = await Promise.all([
+    const [saoPauloRes, latestRes, standingsRes, homeRoundsRes, sourcesRes, teamsRes] = await Promise.all([
       getNews({ topic: 'sao-paulo', per_page: 2 }),
       getNews({ per_page: 5 }),
       getStandings(),
-      getFixtures(),
-      getFixtures({ from: params.from, to: params.to }),
+      getFixturesHomeRounds({ external_league_id: 71 }),
       getSources(),
       getSerieATeams(),
     ]);
@@ -168,10 +159,28 @@ onMounted(async () => {
     } else {
       standingsUnavailable.value = 'Tabela indisponível. Configure FOOTBALL_DATA_ORG_TOKEN ou API_FOOTBALL_KEY e rode o sync.';
     }
-    fixturesGrouped.value = fixturesRes.data.data || [];
-    if (fixturesGrouped.value.length === 0) fixturesUnavailable.value = 'Jogos indisponíveis no momento.';
-    resultsGrouped.value = resultsRes.data.data || [];
-    if (resultsGrouped.value.length === 0) resultsUnavailable.value = 'Nenhum resultado nos últimos 7 dias. Rode o sync para atualizar.';
+    const hr = homeRoundsRes.data?.data;
+    const roundsMeta = homeRoundsRes.data?.meta;
+    const leagueBlock = hr?.league;
+    if (leagueBlock?.id) {
+      resultsGrouped.value = [{ league: leagueBlock, fixtures: hr.last_round?.fixtures ?? [] }];
+      fixturesGrouped.value = [{ league: leagueBlock, fixtures: hr.next_round?.fixtures ?? [] }];
+      resultsRoundLabel.value = hr.last_round?.label ?? '';
+      fixturesRoundLabel.value = hr.next_round?.label ?? '';
+      if (!(hr.last_round?.fixtures?.length > 0)) {
+        resultsUnavailable.value = roundsMeta?.used_round_metadata === false
+          ? 'Nenhum resultado nos últimos 7 dias. Rode o sync para atualizar.'
+          : 'Nenhum resultado disponível para a rodada. Rode o sync do portal ou da API.';
+      }
+      if (!(hr.next_round?.fixtures?.length > 0)) {
+        fixturesUnavailable.value = roundsMeta?.used_round_metadata === false
+          ? 'Jogos indisponíveis no momento.'
+          : 'Nenhum jogo agendado na próxima rodada no momento.';
+      }
+    } else {
+      fixturesUnavailable.value = 'Jogos indisponíveis no momento.';
+      resultsUnavailable.value = 'Resultados indisponíveis no momento.';
+    }
   } catch {
     standingsUnavailable.value = 'Erro ao carregar tabela.';
     fixturesUnavailable.value = 'Erro ao carregar jogos.';

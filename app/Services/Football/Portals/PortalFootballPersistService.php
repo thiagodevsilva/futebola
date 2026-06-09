@@ -91,6 +91,7 @@ class PortalFootballPersistService
                         'away_goals' => $norm['away_goals'],
                         'status' => $norm['status'],
                         'venue' => $norm['venue'],
+                        'match_round' => $norm['match_round'],
                     ]
                 );
                 $count++;
@@ -300,6 +301,14 @@ class PortalFootballPersistService
             $uniqueToken = $date->format('YmdHi').'|'.Str::slug($home).'|'.Str::slug($away);
         }
 
+        $matchRound = null;
+        foreach (['match_round', 'round', 'matchRound', 'rodada'] as $rk) {
+            if (isset($row[$rk]) && is_numeric($row[$rk])) {
+                $matchRound = (int) $row[$rk];
+                break;
+            }
+        }
+
         return [
             'unique_token' => $uniqueToken,
             'date' => $date,
@@ -311,6 +320,7 @@ class PortalFootballPersistService
             'away_goals' => is_numeric($awayGoals) ? (int) $awayGoals : null,
             'status' => isset($row['status']) && is_string($row['status']) ? $row['status'] : null,
             'venue' => isset($row['venue']) && is_string($row['venue']) ? $row['venue'] : null,
+            'match_round' => $matchRound,
         ];
     }
 
