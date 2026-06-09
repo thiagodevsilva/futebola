@@ -7,7 +7,7 @@
     <title>Futebola - Futebol Brasileiro</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     @php
-        // Se existir build, sempre usa ele. Evita tela branca (ex.: hot existe mas node não está rodando).
+        // Sempre usa o build quando existir (acesso via :8081). Vite direto (:5173) só sem build.
         $manifestPath = public_path('build/manifest.json');
         $useBuild = file_exists($manifestPath);
         if ($useBuild) {

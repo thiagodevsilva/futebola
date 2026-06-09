@@ -80,6 +80,52 @@ class FixtureHomeRoundService
      *   used_round_metadata: bool,
      * }
      */
+    /**
+     * Últimos N resultados e próximos N jogos por data (sem agrupar por rodada).
+     *
+     * @return array{
+     *   last_round: array{number: null, label: string, fixtures: Collection<int, Fixture>},
+     *   next_round: array{number: null, label: string, fixtures: Collection<int, Fixture>},
+     *   used_round_metadata: bool,
+     * }
+     */
+    public function resolveHomeRecent(int $leagueId, int $limit = 3): array
+    {
+        $limit = max(1, min($limit, 20));
+        $today = Carbon::now()->toDateString();
+
+        $lastFixtures = Fixture::query()
+            ->where('league_id', $leagueId)
+            ->whereNotNull('home_goals')
+            ->whereNotNull('away_goals')
+            ->orderByDesc('date')
+            ->limit($limit)
+            ->get();
+
+        $nextFixtures = Fixture::query()
+            ->where('league_id', $leagueId)
+            ->where('date', '>=', $today.' 00:00:00')
+            ->orderBy('date')
+            ->limit($limit)
+            ->get();
+
+        $labelSuffix = $limit === 1 ? 'jogo' : 'jogos';
+
+        return [
+            'last_round' => [
+                'number' => null,
+                'label' => "Últimos {$limit} {$labelSuffix}",
+                'fixtures' => $lastFixtures,
+            ],
+            'next_round' => [
+                'number' => null,
+                'label' => "Próximos {$limit} {$labelSuffix}",
+                'fixtures' => $nextFixtures,
+            ],
+            'used_round_metadata' => false,
+        ];
+    }
+
     private function fallbackByDates(int $leagueId): array
     {
         $today = Carbon::now()->toDateString();

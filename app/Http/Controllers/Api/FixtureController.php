@@ -35,7 +35,14 @@ class FixtureController extends Controller
             ], 404);
         }
 
-        $resolved = $homeRoundService->resolveHomeRounds($league->id);
+        $limit = $request->get('limit');
+        if ($limit !== null && $limit !== '') {
+            $resolved = $homeRoundService->resolveHomeRecent($league->id, (int) $limit);
+            $mode = 'recent';
+        } else {
+            $resolved = $homeRoundService->resolveHomeRounds($league->id);
+            $mode = 'round';
+        }
 
         $mapFixtures = fn ($collection) => $collection->map(fn (Fixture $f) => $this->fixtureToApiArray($f))->values();
 
@@ -59,6 +66,7 @@ class FixtureController extends Controller
                 ],
             ],
             'meta' => [
+                'mode' => $mode,
                 'used_round_metadata' => $resolved['used_round_metadata'],
             ],
         ]);
