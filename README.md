@@ -1,85 +1,237 @@
 # Futebola
 
-Portal de futebol brasileiro: notícias agregadas via RSS, tabela do Brasileirão Série A e próximos jogos (API-Football).  
-Stack: **Laravel** (API) + **Vue 3** + **Tailwind CSS** + **daisyUI**. Banco MySQL via Docker.
+Portal de futebol brasileiro: notícias agregadas via RSS, tabela do Brasileirão Série A e próximos jogos.  
+Stack: **Laravel 12** (API + Octane/Swoole) + **Vue 3** + **Tailwind CSS** + **daisyUI**. Banco **MySQL 8** via Docker.
 
 - **Home**: últimas notícias, tabela Série A, próximos jogos, fontes
 - **Notícias**: lista e detalhe com “Ler no site original”
 - **Fontes**: listagem dos feeds RSS
 
-**Tabela e jogos**: configure a API (football-data.org ou API-Football) no `.env` e rode o sync.
+---
 
-**Notícias (times da config)**: em `config/serie_a_teams.php` você define os times e vários portais (GE, Gazeta, etc.) por time. Depois:
-- `php artisan futebola:clear-news` — remove todas as notícias
-- `php artisan futebola:sync-feeds-from-standings` — cria/atualiza os feeds
-- `php artisan futebola:fetch-rss` — busca as notícias
+## Pré-requisitos
 
-**Validar fora do código** (sem depender do front):
-- `php artisan futebola:validate-news` — mostra feeds ativos, contagem por time e amostra de títulos; no final sugere URLs para testar a API no navegador (ex.: `/api/news?topic=sao-paulo`).
+- [Docker](https://docs.docker.com/get-docker/) e Docker Compose instalados
+- (Opcional) Token da [football-data.org](https://www.football-data.org/) — grátis — para tabela e próximos jogos
 
-**Como rodar**: uso oficial é com **Docker** (dev e prod).  
-→ [docs/SETUP-LOCAL.md](docs/SETUP-LOCAL.md) — setup completo (Docker dev/prod, migrate, seed, fila, scheduler)  
-→ [docs/ESTRUTURA.md](docs/ESTRUTURA.md) — referência da base (onde está cada coisa, serviços, comandos)  
-→ [docs/RSS-GUIA-TECNICO.md](docs/RSS-GUIA-TECNICO.md) — RSS/Atom e manutenção
+---
 
-## Pré-requisito
-
-- [Docker](https://docs.docker.com/get-docker/) e Docker Compose
-
-## Subir o projeto
+## Início rápido (primeira vez)
 
 ```bash
+cd futebola
+
+# 1. Parar outros containers Docker (se houver conflito de portas ou quiser ambiente limpo)
+docker stop $(docker ps -q)
+
+# 2. Subir o projeto (app + MySQL + Vite)
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-**Importante:** deixe esse comando rodando (não use `-d`). Os **três** containers precisam estar ativos:
-- **app** (Laravel) → http://localhost:8081  
-- **db** (MySQL)  
-- **node** (Vite) → atualização automática ao editar Vue/JS/CSS (sem precisar de `npm run build`)
+> **Importante:** o projeto usa `docker-compose.dev.yml`, não o `docker-compose.yml` padrão.  
+> Por isso `docker compose down` sem `-f` retorna *"no configuration file provided"*.
 
-Se subir só `app` e `db`, o front usa o build antigo; aí toda alteração exige `npm run build:docker`. Com o **node** rodando, basta salvar o arquivo e recarregar a página.
+Deixe o comando do passo 2 **rodando** no terminal (sem `-d`). Os três serviços precisam estar ativos:
 
-Na primeira vez, se precisar de `.env` e chave:
+| Serviço | Função | URL / porta |
+|---------|--------|-------------|
+| **app** | Laravel Octane | http://localhost:8081 |
+| **db** | MySQL 8 | localhost:33061 (user `app`, senha `app`, db `app`) |
+| **node** | Vite (hot reload) | http://localhost:5173 |
+
+### Configurar `.env` (primeira vez)
+
+Se ainda não existir `.env`:
 
 ```bash
 docker compose -f docker-compose.dev.yml run --rm app sh -c "cp -n .env.example .env 2>/dev/null; php artisan key:generate"
 ```
 
-Depois suba de novo: `docker compose -f docker-compose.dev.yml up`.
+No `.env`, configure o banco para o MySQL do container:
 
-## Onde acessar
+```env
+DB_CONNECTION=mysql
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=app
+DB_USERNAME=app
+DB_PASSWORD=app
+```
 
-| Serviço      | URL                    |
-|-------------|------------------------|
-| App (Laravel) | http://localhost:8081 |
-| Front (Vite)  | http://localhost:5173 |
-| MySQL         | localhost:33061       |
+### Migrar, seed e popular dados
 
-## Depois de alterar o código (evitar tela branca)
+```bash
+# Banco de dados
+docker compose -f docker-compose.dev.yml exec app php artisan migrate
+docker compose -f docker-compose.dev.yml exec app php artisan db:seed
 
-→ **[docs/DEPOIS-DE-ALTERAR.md](docs/DEPOIS-DE-ALTERAR.md)** — o que rodar após cada alteração (Vue/JS/CSS, Blade, PHP).
+# Notícias RSS (busca feeds cadastrados)
+docker compose -f docker-compose.dev.yml exec app php artisan futebola:fetch-rss
 
-**Resumo:** alterou Vue/JS/CSS → rode `npm run build:docker` (ou o comando do doc) e dê **Ctrl+Shift+R** no navegador.
+# Imagens das notícias (og:image na página — ver seção abaixo)
+docker compose -f docker-compose.dev.yml exec app php artisan futebola:backfill-news-images
+```
+
+### Imagens das notícias
+
+Os feeds RSS **nem sempre trazem imagem**. O Futebola preenche `image_url` em duas etapas:
+
+1. **No fetch RSS** — extrai thumbnail/media do feed ou da descrição HTML (`RssNormalizer`)
+2. **Backfill manual** — para notícias ainda sem foto, o comando acessa o link da matéria e lê a meta `og:image` da página (`OgImageService`)
+
+Depois de `futebola:fetch-rss`, rode:
+
+```bash
+docker compose -f docker-compose.dev.yml exec app php artisan futebola:backfill-news-images
+```
+
+Opções úteis:
+
+- `--limit=50` — processa no máximo 50 notícias (padrão: 100; máximo: 500)
+- O comando faz pausa de ~0,8 s entre cada URL para evitar rate limit
+
+Se alguma fonte (ex.: Gazeta) continuar sem imagem, rode de novo com `--limit=20` ou ajuste o timeout em `app/Services/OgImageService.php`.
+
+Para inspecionar se um feed traz imagem no RSS: `php artisan futebola:inspect-feed {url_do_feed}`.
+
+### Tabela e próximos jogos (opcional)
+
+1. Crie conta em [football-data.org](https://www.football-data.org/) e coloque o token no `.env`:
+   ```env
+   FOOTBALL_DATA_ORG_TOKEN=seu_token_aqui
+   ```
+2. Sincronize:
+   ```bash
+   docker compose -f docker-compose.dev.yml exec app php artisan futebola:sync-football
+   ```
+
+Sem token, a home mostra “indisponível” para tabela e jogos — o resto funciona normalmente.
+
+### Atualizações automáticas (opcional, em terminais separados)
+
+```bash
+# Worker de filas (RSS, standings, fixtures)
+docker compose -f docker-compose.dev.yml exec app php artisan queue:work --tries=2
+
+# Scheduler (dispara jobs a cada 15 min / 30 min / 1h)
+docker compose -f docker-compose.dev.yml exec app php artisan schedule:work
+```
+
+---
+
+## Uso diário
+
+### Subir
+
+```bash
+cd futebola
+docker compose -f docker-compose.dev.yml up
+```
+
+Com rebuild da imagem (após mudanças no Dockerfile ou dependências PHP):
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Em background (sem ver logs no terminal):
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Parar
+
+```bash
+# Parar só o Futebola
+docker compose -f docker-compose.dev.yml down
+
+# Parar e remover o volume do banco (apaga dados!)
+docker compose -f docker-compose.dev.yml down -v
+```
+
+### Parar todos os containers Docker da máquina
+
+```bash
+docker stop $(docker ps -q)
+```
+
+---
+
+## Frontend em desenvolvimento
+
+Com **app + db + node** rodando, o Vite recompila automaticamente ao salvar `.vue`, `.js` ou `.css`. Basta recarregar http://localhost:8081.
+
+- Se subir **só app e db** (sem **node**), o Laravel usa o build antigo em `public/build/` e cada alteração exige rebuild manual.
+- **Tela em branco?** Remova o arquivo `public/hot` e force refresh (Ctrl+Shift+R):
+  ```bash
+  docker compose -f docker-compose.dev.yml exec app rm -f public/hot
+  docker compose -f docker-compose.dev.yml run --rm node npm run build
+  ```
+
+→ Detalhes: [docs/DEPOIS-DE-ALTERAR.md](docs/DEPOIS-DE-ALTERAR.md)
+
+---
 
 ## Comandos úteis
 
-Rodar dentro do container da app:
+Todos rodam **dentro do container app** (prefixo `docker compose -f docker-compose.dev.yml exec app`):
+
+| Ação | Comando |
+|------|---------|
+| Entrar no container | `docker compose -f docker-compose.dev.yml exec app sh` |
+| Migrar | `php artisan migrate` |
+| Seed | `php artisan db:seed` |
+| Buscar notícias RSS | `php artisan futebola:fetch-rss` |
+| Preencher imagens (og:image) | `php artisan futebola:backfill-news-images` |
+| Inspecionar feed RSS | `php artisan futebola:inspect-feed {url}` |
+| Sincronizar tabela/jogos | `php artisan futebola:sync-football` |
+| Validar notícias | `php artisan futebola:validate-news` |
+| Limpar cache | `php artisan config:clear && php artisan cache:clear` |
+| Build do front (sem node) | `docker compose -f docker-compose.dev.yml run --rm node npm run build` |
+
+### Notícias por time
+
+Em `config/serie_a_teams.php` você define times e portais (GE, Gazeta, etc.). Depois:
 
 ```bash
-# Entrar no container
-docker compose -f docker-compose.dev.yml exec app sh
-
-# Exemplos (de dentro do container ou com run)
-php artisan migrate
-php artisan make:controller NomeController
-composer require pacote/nome
+php artisan futebola:clear-news
+php artisan futebola:sync-feeds-from-standings
+php artisan futebola:fetch-rss
+php artisan futebola:backfill-news-images
 ```
 
-## Estrutura
+---
 
-- `docker/php/Dockerfile` — imagem PHP 8.3 + Swoole + Composer
-- `docker-compose.dev.yml` — app (Octane), MySQL, Node (Vite)
-- `docker-compose.prod.yml` — uso em produção (quando houver)
+## Produção
+
+```bash
+npm install --legacy-peer-deps && npm run build   # gera public/build/
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+App em http://localhost:9001. Filas e scheduler via supervisor/cron no host.
+
+---
+
+## Documentação
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [docs/SETUP-LOCAL.md](docs/SETUP-LOCAL.md) | Setup completo (dev/prod, migrate, seed, fila, scheduler) |
+| [docs/ESTRUTURA.md](docs/ESTRUTURA.md) | Estrutura do código, serviços, rotas, pastas |
+| [docs/RSS-GUIA-TECNICO.md](docs/RSS-GUIA-TECNICO.md) | Agregação RSS/Atom e manutenção |
+| [docs/DEPOIS-DE-ALTERAR.md](docs/DEPOIS-DE-ALTERAR.md) | O que rodar após alterar Vue, Blade ou PHP |
+
+---
+
+## Estrutura Docker
+
+```
+docker/php/Dockerfile       — PHP 8.3 + Swoole + Composer
+docker-compose.dev.yml      — app (Octane), MySQL, Node (Vite)
+docker-compose.prod.yml     — produção (sem Node; assets pré-buildados)
+```
 
 ---
 
