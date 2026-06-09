@@ -1,16 +1,29 @@
 <template>
-  <div class="rounded-[var(--radius-box)] border border-[#6E6E6E]/15 overflow-hidden bg-white shadow-[var(--shadow-card)]">
+  <div class="rounded-[var(--radius-box)] border border-[#6E6E6E]/15 bg-white shadow-[var(--shadow-card)]">
     <div class="px-4 py-3 border-b border-[#6E6E6E]/15 bg-[#BAFF39]/10">
       <h2 class="font-bold text-lg text-neutral-900">
         {{ leagueName || 'Classificação' }}
       </h2>
       <p v-if="season" class="text-sm text-[#6E6E6E]">Temporada {{ season }}</p>
     </div>
+    <div
+      v-if="zones.length"
+      class="px-4 py-2 border-b border-[#6E6E6E]/10 flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-[#6E6E6E] bg-neutral-50"
+    >
+      <span
+        v-for="z in zones"
+        :key="z.code"
+        class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 bg-white border border-[#6E6E6E]/10"
+      >
+        <span class="w-2.5 h-2.5 rounded-full shrink-0" :class="zoneDotClass(z.color)"></span>
+        {{ z.label }} ({{ z.from }}–{{ z.to }})
+      </span>
+    </div>
     <div class="overflow-x-auto">
-      <table class="table text-sm w-full">
+      <table class="table text-sm w-full border-collapse">
         <thead>
           <tr class="bg-neutral-100 text-[#6E6E6E] text-xs uppercase tracking-wide">
-            <th class="w-10 text-center">#</th>
+            <th class="w-10 text-center pl-3">#</th>
             <th>Time</th>
             <th class="text-center w-12 bg-[#BAFF39]/10">P</th>
             <th class="text-center w-10 hidden sm:table-cell">J</th>
@@ -26,10 +39,17 @@
           <tr
             v-for="(row, i) in standings"
             :key="i"
-            class="hover:bg-neutral-50 border-b border-[#6E6E6E]/5 last:border-0"
-            :class="zoneClass(row.rank)"
+            class="border-b border-[#6E6E6E]/5 last:border-0"
+            :class="zoneRowClass(row.zone)"
           >
-            <td class="text-center font-medium text-[#6E6E6E]">{{ row.rank }}</td>
+            <td class="text-center font-medium text-[#6E6E6E] relative pl-3">
+              <span
+                v-if="row.zone"
+                class="absolute left-0 top-1 bottom-1 w-1 rounded-full"
+                :class="zoneDotClass(row.zone.color)"
+              ></span>
+              {{ row.rank }}
+            </td>
             <td>
               <div class="flex items-center gap-2 py-1">
                 <img
@@ -65,17 +85,6 @@
         </tbody>
       </table>
     </div>
-    <div v-if="standings.length" class="px-4 py-2 border-t border-[#6E6E6E]/10 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6E6E6E]">
-      <span class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full bg-green-500"></span> Libertadores (1–4)
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full bg-blue-500"></span> Pré-Libertadores (5–6)
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full bg-red-500"></span> Rebaixamento (17–20)
-      </span>
-    </div>
     <p v-if="unavailable" class="p-4 text-center text-[#6E6E6E] text-sm">
       {{ unavailable }}
     </p>
@@ -87,14 +96,23 @@ defineProps({
   leagueName: { type: String, default: '' },
   season: { type: [Number, String], default: null },
   standings: { type: Array, default: () => [] },
+  zones: { type: Array, default: () => [] },
   unavailable: { type: String, default: '' },
 });
 
-function zoneClass(rank) {
-  const r = Number(rank);
-  if (r >= 1 && r <= 4) return 'border-l-4 border-l-green-500';
-  if (r >= 5 && r <= 6) return 'border-l-4 border-l-blue-500';
-  if (r >= 17 && r <= 20) return 'border-l-4 border-l-red-500';
-  return 'border-l-4 border-l-transparent';
+const colorMap = {
+  green: { dot: 'bg-green-500', row: 'bg-green-500/5 hover:bg-green-500/10' },
+  blue: { dot: 'bg-blue-500', row: 'bg-blue-500/5 hover:bg-blue-500/10' },
+  amber: { dot: 'bg-amber-500', row: 'bg-amber-500/5 hover:bg-amber-500/10' },
+  red: { dot: 'bg-red-500', row: 'bg-red-500/5 hover:bg-red-500/10' },
+};
+
+function zoneRowClass(zone) {
+  if (!zone?.color) return 'hover:bg-neutral-50';
+  return colorMap[zone.color]?.row ?? 'hover:bg-neutral-50';
+}
+
+function zoneDotClass(color) {
+  return colorMap[color]?.dot ?? 'bg-neutral-400';
 }
 </script>

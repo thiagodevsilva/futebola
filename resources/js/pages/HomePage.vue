@@ -6,6 +6,7 @@
           :league-name="standingsLeagueName"
           :season="standingsSeason"
           :standings="standingsRows"
+          :zones="standingsZones"
           :unavailable="standingsUnavailable"
         />
       </div>
@@ -59,50 +60,6 @@
         </div>
       </aside>
     </section>
-
-    <section>
-      <h2 class="text-xl font-bold mb-4 text-neutral-900">Fontes</h2>
-      <div class="flex flex-wrap gap-2">
-        <RouterLink
-          v-for="s in sources"
-          :key="s.id"
-          :to="`/news?source_id=${s.id}`"
-          class="badge badge-outline hover:bg-[#BAFF39]"
-        >
-          {{ s.name }}
-        </RouterLink>
-      </div>
-      <RouterLink to="/sources" class="link text-sm mt-2 inline-block" style="color: #0d9488;">Ver todas →</RouterLink>
-    </section>
-
-    <section class="rounded-lg border border-[#6E6E6E]/15 bg-neutral-50 p-4">
-      <details class="group">
-        <summary class="cursor-pointer list-none font-semibold text-neutral-800 flex items-center gap-2">
-          <span class="transition group-open:rotate-90">▶</span>
-          O que inclui o plano gratuito (football-data.org)?
-        </summary>
-        <ul class="mt-3 text-sm text-[#6E6E6E] space-y-1 pl-5">
-          <li>10 chamadas/minuto · Tabelas · Jogos e placares (com atraso, não ao vivo)</li>
-          <li><strong>12 competições:</strong> Brasileirão Série A e B, Copa do Brasil, Premier League, La Liga, Serie A (Itália), Bundesliga, Ligue 1, Eredivisie, Primeira Liga, Champions League, Copa do Mundo, Euro</li>
-          <li>Sem placar ao vivo nem dados extras (escalações, cartões) no free</li>
-        </ul>
-      </details>
-    </section>
-
-    <section class="rounded-lg border border-[#6E6E6E]/15 bg-neutral-50 p-4">
-      <details class="group">
-        <summary class="cursor-pointer list-none font-semibold text-neutral-800 flex items-center gap-2">
-          <span class="transition group-open:rotate-90">▶</span>
-          Como buscar imagens das notícias?
-        </summary>
-        <div class="mt-3 text-sm text-[#6E6E6E] space-y-2 pl-5">
-          <p>Os feeds RSS nem sempre trazem imagem. As fotos vêm da <strong>página da notícia</strong> (meta <code>og:image</code>).</p>
-          <p>Depois de rodar <code>futebola:fetch-rss</code>, execute no Docker:</p>
-          <pre class="bg-neutral-200 rounded p-2 text-xs overflow-x-auto">docker compose -f docker-compose.dev.yml exec app php artisan futebola:backfill-news-images</pre>
-          <p>O comando acessa o link de cada notícia sem imagem e preenche com o <code>og:image</code>. Use <code>--limit=50</code> para processar no máximo 50 (evita muitas requisições).</p>
-        </div>
-      </details>
-    </section>
   </div>
 </template>
 
@@ -112,13 +69,14 @@ import { RouterLink } from 'vue-router';
 import CardNoticiaCompact from '@/components/CardNoticiaCompact.vue';
 import TabelaClassificacao from '@/components/TabelaClassificacao.vue';
 import ListaJogos from '@/components/ListaJogos.vue';
-import { getNews, getStandings, getFixturesHomeRounds, getSources } from '@/api';
+import { getNews, getStandings, getFixturesHomeRounds } from '@/api';
 
 const homeNews = ref([]);
 const loadingNews = ref(true);
 const standingsLeagueName = ref('');
 const standingsSeason = ref(null);
 const standingsRows = ref([]);
+const standingsZones = ref([]);
 const standingsUnavailable = ref('');
 const fixturesGrouped = ref([]);
 const fixturesUnavailable = ref('');
@@ -126,24 +84,22 @@ const resultsGrouped = ref([]);
 const resultsUnavailable = ref('');
 const resultsRoundLabel = ref('');
 const fixturesRoundLabel = ref('');
-const sources = ref([]);
 
 onMounted(async () => {
   try {
-    const [newsRes, standingsRes, homeRoundsRes, sourcesRes] = await Promise.all([
+    const [newsRes, standingsRes, homeRoundsRes] = await Promise.all([
       getNews({ per_page: 3 }),
       getStandings(),
       getFixturesHomeRounds({ external_league_id: 71, limit: 3 }),
-      getSources(),
     ]);
     homeNews.value = newsRes.data?.data ?? [];
-    sources.value = sourcesRes.data.data || [];
     const standingGroups = standingsRes.data.data || [];
     if (standingGroups.length && standingGroups[0].standings) {
       const first = standingGroups[0];
       standingsLeagueName.value = first.league?.name || 'Brasileirão Série A';
       standingsSeason.value = standingsRes.data.meta?.season ?? new Date().getFullYear();
       standingsRows.value = first.standings;
+      standingsZones.value = first.zones ?? [];
     } else {
       standingsUnavailable.value = 'Tabela indisponível. Configure FOOTBALL_DATA_ORG_TOKEN ou API_FOOTBALL_KEY e rode o sync.';
     }

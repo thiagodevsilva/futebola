@@ -5,18 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\League;
 use App\Models\Standing;
-use Carbon\Carbon;
+use App\Services\Football\StandingZoneResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StandingController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, StandingZoneResolver $zoneResolver): JsonResponse
     {
-        // Temporada: parâmetro ou ano atual (compatível com football-data.org e API-Football)
         $season = (int) $request->get('season', now()->year);
-        $leagueId = $request->get('league_id'); // internal id
-        $externalId = $request->get('external_league_id'); // API id
+        $leagueId = $request->get('league_id');
+        $externalId = $request->get('external_league_id');
 
         $query = Standing::with('league')
             ->where('season', $season)
@@ -36,9 +35,11 @@ class StandingController extends Controller
         }
 
         $standings = $query->get();
-        $grouped = $standings->groupBy('league_id')->values()->map(function ($rows) {
+        $grouped = $standings->groupBy('league_id')->values()->map(function ($rows) use ($zoneResolver) {
             $first = $rows->first();
             $league = $first ? $first->league : null;
+            $leagueZones = $league ? $zoneResolver->zonesForLeague($league) : [];
+
             return [
                 'league' => $league ? [
                     'id' => $league->id,
@@ -46,20 +47,24 @@ class StandingController extends Controller
                     'name' => $league->name,
                     'logo' => $league->logo,
                 ] : null,
-                'standings' => $rows->map(fn ($s) => [
-                    'rank' => $s->rank,
-                    'team_name' => $s->team_name,
-                    'team_logo' => $s->team_logo,
-                    'points' => $s->points,
-                    'played' => $s->played,
-                    'win' => $s->win,
-                    'draw' => $s->draw,
-                    'loss' => $s->loss,
-                    'goals_for' => $s->goals_for,
-                    'goals_against' => $s->goals_against,
-                    'goal_diff' => $s->goal_diff,
-                    'form' => $s->form,
-                ])->values(),
+                'zones' => $leagueZones,
+                'standings' => $rows->map(function ($s) use ($league, $zoneResolver) {
+                    return [
+                        'rank' => $s->rank,
+                        'team_name' => $s->team_name,
+                        'team_logo' => $s->team_logo,
+                        'points' => $s->points,
+                        'played' => $s->played,
+                        'win' => $s->win,
+                        'draw' => $s->draw,
+                        'loss' => $s->loss,
+                        'goals_for' => $s->goals_for,
+                        'goals_against' => $s->goals_against,
+                        'goal_diff' => $s->goal_diff,
+                        'form' => $s->form,
+                        'zone' => $league ? $zoneResolver->zoneForRank($league, (int) $s->rank) : null,
+                    ];
+                })->values(),
             ];
         });
 
