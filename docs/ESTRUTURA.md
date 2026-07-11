@@ -44,7 +44,7 @@ php artisan schedule:work
 
 | Serviço | Descrição |
 |--------|------------|
-| **app** | Build igual ao dev; `composer install --no-dev -o`; Octane; porta **9001** no host. Usa `.env` do host. |
+| **app** | Build igual ao dev; `composer install --no-dev -o`; Octane; porta **9003** no host (`127.0.0.1`). Usa `.env` do host. Ver [DEPLOY-VPS.md](DEPLOY-VPS.md). |
 | **db** | MySQL 8.0, sem porta exposta; dados em volume `dbdata`. |
 
 - **Sem serviço Node**: o front é buildado antes (ex.: `npm run build`) e os assets ficam em `public/build`, servidos pelo Laravel.
@@ -111,4 +111,4 @@ DB_PASSWORD=app
 | Fila | `docker compose -f docker-compose.dev.yml exec app php artisan queue:work` |
 | Scheduler | `docker compose -f docker-compose.dev.yml exec app php artisan schedule:work` |
 
-Produção: build do front antes de subir a imagem (`npm run build`); fila e scheduler no host ou em processo/container dedicado.
+Produção: ver [DEPLOY-VPS.md](DEPLOY-VPS.md) (build front via container Node, Nginx no host, fila/scheduler via Docker).

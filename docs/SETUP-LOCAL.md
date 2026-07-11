@@ -146,43 +146,35 @@ Abra **http://localhost:8081** no navegador; o Laravel serve a SPA e o Vite inje
 
 ---
 
-## 2. Produção (Docker)
+## 2. Produção (Docker / VPS)
 
-Use o `docker-compose.prod.yml`:
+Guia completo passo a passo (`.env`, Nginx, SSL, porta, syncs): **[DEPLOY-VPS.md](DEPLOY-VPS.md)**.
 
-- **app**: PHP 8.3 + Octane, porta **9001** no host.
-- **db**: MySQL 8, sem porta exposta; variáveis via `.env`.
+Resumo:
 
-### Build do front antes do deploy
-
-O compose de prod **não** sobe o Node. Build dos assets na máquina (ou em CI):
-
-```bash
-npm install --legacy-peer-deps
-npm run build
-```
-
-Isso gera os arquivos em `public/build/`, que vão na imagem junto com o código.
-
-### Subir prod
+- **app**: PHP 8.3 + Octane; porta no host **`127.0.0.1:9003`** (evita conflito com outros apps em 9001/9002).
+- **db**: MySQL 8, sem porta no host; `MYSQL_*` no `.env` alinhado a `DB_*`.
+- **Front**: build via imagem Node (não precisa npm no host), depois `up --build`.
+- **Nginx** no host faz `proxy_pass` para `:9003`; SSL com certbot no subdomínio.
+- Use `APP_URL` e `ASSET_URL` em `https://...` (senão mixed content / tela branca).
 
 ```bash
+docker run --rm -v "$(pwd)":/var/www -w /var/www node:22-alpine \
+  sh -c "npm install --legacy-peer-deps && npm run build"
+
 docker compose -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.prod.yml exec app php artisan migrate --force
 ```
 
 ### Filas e scheduler em produção
 
-Rodar no host (ou em outro container) com o mesmo `.env` e código:
-
 ```bash
-# Worker
-php artisan queue:work --tries=2
+# Worker (deixar rodando — systemd/supervisor)
+docker compose -f docker-compose.prod.yml exec app php artisan queue:work --tries=2
 
-# Scheduler (cron)
-* * * * * cd /caminho/do/futebola && php artisan schedule:run >> /dev/null 2>&1
+# Scheduler (cron no host)
+* * * * * cd /opt/futebola && docker compose -f docker-compose.prod.yml exec -T app php artisan schedule:run >> /dev/null 2>&1
 ```
-
-Ou usar supervisor para o worker e cron para o scheduler.
 
 ---
 

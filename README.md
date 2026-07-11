@@ -203,14 +203,36 @@ php artisan futebola:backfill-news-images
 
 ---
 
-## Produção
+## Produção (VPS)
+
+Guia completo: **[docs/DEPLOY-VPS.md](docs/DEPLOY-VPS.md)** (`.env`, porta, Nginx, SSL, fila, troubleshooting).
+
+Resumo (primeira vez em `/opt/futebola`):
 
 ```bash
-npm install --legacy-peer-deps && npm run build   # gera public/build/
+# 1. .env de prod — APP_URL e ASSET_URL em https://, DB_* = MYSQL_*, APP_KEY via openssl
+#    echo "base64:$(openssl rand -base64 32)"
+
+# 2. Front (sem npm no host)
+docker run --rm -v "$(pwd)":/var/www -w /var/www node:22-alpine \
+  sh -c "npm install --legacy-peer-deps && npm run build"
+
+# 3. App + MySQL (porta host 9003 — evitar conflito com outros sites em 9001/9002)
 docker compose -f docker-compose.prod.yml up --build -d
+
+# 4. Banco e dados
+docker compose -f docker-compose.prod.yml exec app php artisan migrate --force
+docker compose -f docker-compose.prod.yml exec app php artisan db:seed --force
+docker compose -f docker-compose.prod.yml exec app php artisan futebola:sync-feeds-from-standings
+docker compose -f docker-compose.prod.yml exec app php artisan futebola:fetch-rss
+docker compose -f docker-compose.prod.yml exec app php artisan futebola:backfill-news-images
+docker compose -f docker-compose.prod.yml exec app php artisan futebola:sync-football
+
+# 5. Nginx no host → proxy_pass http://127.0.0.1:9003 + certbot no subdomínio
+# 6. Cron schedule:run + queue:work (ver DEPLOY-VPS.md)
 ```
 
-App em http://localhost:9001. Filas e scheduler via supervisor/cron no host.
+Nginx do host faz proxy para o Docker; MySQL fica só na rede interna do Compose.
 
 ---
 
@@ -219,6 +241,7 @@ App em http://localhost:9001. Filas e scheduler via supervisor/cron no host.
 | Documento | Conteúdo |
 |-----------|----------|
 | [docs/SETUP-LOCAL.md](docs/SETUP-LOCAL.md) | Setup completo (dev/prod, migrate, seed, fila, scheduler) |
+| [docs/DEPLOY-VPS.md](docs/DEPLOY-VPS.md) | Deploy na VPS (Docker + Nginx + SSL + syncs) |
 | [docs/ESTRUTURA.md](docs/ESTRUTURA.md) | Estrutura do código, serviços, rotas, pastas |
 | [docs/RSS-GUIA-TECNICO.md](docs/RSS-GUIA-TECNICO.md) | Agregação RSS/Atom e manutenção |
 | [docs/DEPOIS-DE-ALTERAR.md](docs/DEPOIS-DE-ALTERAR.md) | O que rodar após alterar Vue, Blade ou PHP |

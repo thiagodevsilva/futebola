@@ -20,7 +20,7 @@ class FetchRssFeedsCommand extends Command
             : Feed::active()->ordered()->get();
 
         if ($feeds->isEmpty()) {
-            $this->warn('Nenhum feed ativo. Rode: php artisan db:seed --class=FeedSeeder');
+            $this->warn('Nenhum feed ativo. Rode: php artisan db:seed --force && php artisan futebola:sync-feeds-from-standings');
             return self::FAILURE;
         }
 
