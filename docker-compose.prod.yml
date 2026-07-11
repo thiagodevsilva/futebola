@@ -6,7 +6,7 @@ services:
     env_file: .env
     command: sh -c "composer install --no-dev -o && php artisan octane:start --server=swoole --host=0.0.0.0 --port=8000"
     ports:
-      - "127.0.0.1:9001:8000"   # padronize 9001, 9002...
+      - "127.0.0.1:9003:8000"
     depends_on:
       - db
 
