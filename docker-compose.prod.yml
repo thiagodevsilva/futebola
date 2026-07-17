@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:9003:8000"
     depends_on:
       - db
+    restart: unless-stopped
 
   db:
     image: mysql:8.0
